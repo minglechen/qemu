@@ -27,7 +27,6 @@
 #include "qemu/atomic.h"
 #include "qemu/error-report.h"
 #include "hw/mips/cpudevs.h"
-#include "qapi/qapi-commands-machine-target.h"
 
 #ifdef TARGET_CHERI
 #include "cheri-helper-utils.h"
@@ -500,7 +499,7 @@ void cpu_mips_store_status(CPUMIPSState *env, target_ulong val)
         tlb_flush(env_cpu(env));
     }
 #endif
-    if (env->CP0_Config3 & (1 << CP0C3_MT)) {
+    if (ase_mt_available(env)) {
         sync_c0_status(env, env, env->current_tc);
     } else {
         compute_hflags(env);
@@ -675,7 +674,7 @@ hwaddr mips_cpu_get_phys_page_debug(CPUState *cs, vaddr addr)
  */
 
 static bool get_pte(CPUMIPSState *env, uint64_t vaddr, int entry_size,
-        uint64_t *pte)
+                    uint64_t *pte)
 {
     if ((vaddr & ((entry_size >> 3) - 1)) != 0) {
         return false;
@@ -689,7 +688,7 @@ static bool get_pte(CPUMIPSState *env, uint64_t vaddr, int entry_size,
 }
 
 static uint64_t get_tlb_entry_layout(CPUMIPSState *env, uint64_t entry,
-        int entry_size, int ptei)
+                                     int entry_size, int ptei)
 {
     uint64_t result = entry;
     uint64_t rixi;
@@ -704,8 +703,9 @@ static uint64_t get_tlb_entry_layout(CPUMIPSState *env, uint64_t entry,
 }
 
 static int walk_directory(CPUMIPSState *env, uint64_t *vaddr,
-        int directory_index, bool *huge_page, bool *hgpg_directory_hit,
-        uint64_t *pw_entrylo0, uint64_t *pw_entrylo1)
+                          int directory_index, bool *huge_page,
+                          bool *hgpg_directory_hit, uint64_t *pw_entrylo0,
+                          uint64_t *pw_entrylo1)
 {
     int dph = (env->CP0_PWCtl >> CP0PC_DPH) & 0x1;
     int psn = (env->CP0_PWCtl >> CP0PC_PSN) & 0x3F;
@@ -713,10 +713,12 @@ static int walk_directory(CPUMIPSState *env, uint64_t *vaddr,
     int pf_ptew = (env->CP0_PWField >> CP0PF_PTEW) & 0x3F;
     int ptew = (env->CP0_PWSize >> CP0PS_PTEW) & 0x3F;
     int native_shift = (((env->CP0_PWSize >> CP0PS_PS) & 1) == 0) ? 2 : 3;
-    int directory_shift = (ptew > 1) ? -1 :
-            (hugepg && (ptew == 1)) ? native_shift + 1 : native_shift;
-    int leaf_shift = (ptew > 1) ? -1 :
-            (ptew == 1) ? native_shift + 1 : native_shift;
+    int directory_shift = (ptew > 1)                ? -1
+                          : (hugepg && (ptew == 1)) ? native_shift + 1
+                                                    : native_shift;
+    int leaf_shift = (ptew > 1)    ? -1
+                     : (ptew == 1) ? native_shift + 1
+                                   : native_shift;
     uint32_t direntry_size = 1 << (directory_shift + 3);
     uint32_t leafentry_size = 1 << (leaf_shift + 3);
     uint64_t entry;
@@ -726,8 +728,8 @@ static int walk_directory(CPUMIPSState *env, uint64_t *vaddr,
     uint64_t w = 0;
 
     if (get_physical_address(env, &paddr, &prot, *vaddr, MMU_DATA_LOAD,
-                             ACCESS_INT, cpu_mmu_index(env, false)) !=
-                             TLBRET_MATCH) {
+                             ACCESS_INT,
+                             cpu_mmu_index(env, false)) != TLBRET_MATCH) {
         /* wrong base address */
         return 0;
     }
@@ -744,7 +746,7 @@ static int walk_directory(CPUMIPSState *env, uint64_t *vaddr,
             /* Generate adjacent page from same PTE for odd TLB page */
             lsb = (1 << w) >> 6;
             *pw_entrylo0 = entry & ~lsb; /* even page */
-            *pw_entrylo1 = entry | lsb; /* odd page */
+            *pw_entrylo1 = entry | lsb;  /* odd page */
         } else if (dph) {
             int oddpagebit = 1 << leaf_shift;
             uint64_t vaddr2 = *vaddr ^ oddpagebit;
@@ -755,7 +757,7 @@ static int walk_directory(CPUMIPSState *env, uint64_t *vaddr,
             }
             if (get_physical_address(env, &paddr, &prot, vaddr2, MMU_DATA_LOAD,
                                      ACCESS_INT, cpu_mmu_index(env, false)) !=
-                                     TLBRET_MATCH) {
+                TLBRET_MATCH) {
                 return 0;
             }
             if (!get_pte(env, vaddr2, leafentry_size, &entry)) {
@@ -778,7 +780,7 @@ static int walk_directory(CPUMIPSState *env, uint64_t *vaddr,
 }
 
 static bool page_table_walk_refill(CPUMIPSState *env, vaddr address, int rw,
-        int mmu_idx)
+                                   int mmu_idx)
 {
     int gdw = (env->CP0_PWSize >> CP0PS_GDW) & 0x3F;
     int udw = (env->CP0_PWSize >> CP0PS_UDW) & 0x3F;
@@ -819,10 +821,12 @@ static bool page_table_walk_refill(CPUMIPSState *env, vaddr address, int rw,
     int hugepg = (env->CP0_PWCtl >> CP0PC_HUGEPG) & 0x1;
 
     /* HTW Shift values (depend on entry size) */
-    int directory_shift = (ptew > 1) ? -1 :
-            (hugepg && (ptew == 1)) ? native_shift + 1 : native_shift;
-    int leaf_shift = (ptew > 1) ? -1 :
-            (ptew == 1) ? native_shift + 1 : native_shift;
+    int directory_shift = (ptew > 1)                ? -1
+                          : (hugepg && (ptew == 1)) ? native_shift + 1
+                                                    : native_shift;
+    int leaf_shift = (ptew > 1)    ? -1
+                     : (ptew == 1) ? native_shift + 1
+                                   : native_shift;
 
     /* Offsets into tables */
     int goffset = gindex << directory_shift;
@@ -861,8 +865,7 @@ static bool page_table_walk_refill(CPUMIPSState *env, vaddr address, int rw,
     if (gdw > 0) {
         vaddr |= goffset;
         switch (walk_directory(env, &vaddr, pf_gdw, &huge_page, &hgpg_gdhit,
-                               &pw_entrylo0, &pw_entrylo1))
-        {
+                               &pw_entrylo0, &pw_entrylo1)) {
         case 0:
             return false;
         case 1:
@@ -877,8 +880,7 @@ static bool page_table_walk_refill(CPUMIPSState *env, vaddr address, int rw,
     if (udw > 0) {
         vaddr |= uoffset;
         switch (walk_directory(env, &vaddr, pf_udw, &huge_page, &hgpg_udhit,
-                               &pw_entrylo0, &pw_entrylo1))
-        {
+                               &pw_entrylo0, &pw_entrylo1)) {
         case 0:
             return false;
         case 1:
@@ -893,8 +895,7 @@ static bool page_table_walk_refill(CPUMIPSState *env, vaddr address, int rw,
     if (mdw > 0) {
         vaddr |= moffset;
         switch (walk_directory(env, &vaddr, pf_mdw, &huge_page, &hgpg_mdhit,
-                               &pw_entrylo0, &pw_entrylo1))
-        {
+                               &pw_entrylo0, &pw_entrylo1)) {
         case 0:
             return false;
         case 1:
@@ -908,8 +909,8 @@ static bool page_table_walk_refill(CPUMIPSState *env, vaddr address, int rw,
     /* Leaf Level Page Table - First half of PTE pair */
     vaddr |= ptoffset0;
     if (get_physical_address(env, &paddr, &prot, vaddr, MMU_DATA_LOAD,
-                             ACCESS_INT, cpu_mmu_index(env, false)) !=
-                             TLBRET_MATCH) {
+                             ACCESS_INT,
+                             cpu_mmu_index(env, false)) != TLBRET_MATCH) {
         return false;
     }
     if (!get_pte(env, vaddr, leafentry_size, &dir_entry)) {
@@ -921,8 +922,8 @@ static bool page_table_walk_refill(CPUMIPSState *env, vaddr address, int rw,
     /* Leaf Level Page Table - Second half of PTE pair */
     vaddr |= ptoffset1;
     if (get_physical_address(env, &paddr, &prot, vaddr, MMU_DATA_LOAD,
-                             ACCESS_INT, cpu_mmu_index(env, false)) !=
-                             TLBRET_MATCH) {
+                             ACCESS_INT,
+                             cpu_mmu_index(env, false)) != TLBRET_MATCH) {
         return false;
     }
     if (!get_pte(env, vaddr, leafentry_size, &dir_entry)) {
@@ -937,8 +938,7 @@ refill:
 
     if (huge_page) {
         switch (hgpg_bdhit << 3 | hgpg_gdhit << 2 | hgpg_udhit << 1 |
-                hgpg_mdhit)
-        {
+                hgpg_mdhit) {
         case 4:
             m = (1 << pf_gdw) - 1;
             if (pf_gdw & 1) {
@@ -959,10 +959,10 @@ refill:
             break;
         }
     }
-    pw_pagemask = m >> 12;
-    update_pagemask(env, pw_pagemask << 13, &pw_pagemask);
-    pw_entryhi = (address & ~0x1fff) |
-                 (env->CP0_EntryHi & (0xFF | CP0EnHi_CLG_MASK));
+    pw_pagemask = m >> TARGET_PAGE_BITS_MIN;
+    update_pagemask(env, pw_pagemask << CP0PM_MASK, &pw_pagemask);
+    pw_entryhi =
+        (address & ~0x1fff) | (env->CP0_EntryHi & (0xFF | CP0EnHi_CLG_MASK));
     {
         target_ulong tmp_entryhi = env->CP0_EntryHi;
         int32_t tmp_pagemask = env->CP0_PageMask;
@@ -1097,6 +1097,7 @@ hwaddr cpu_mips_translate_address(CPUMIPSState *env, target_ulong address,
         return physical;
     }
 }
+#endif /* !CONFIG_USER_ONLY */
 
 static const char * const excp_names[EXCP_LAST + 1] = {
     [EXCP_RESET] = "reset",
@@ -1137,7 +1138,14 @@ static const char * const excp_names[EXCP_LAST + 1] = {
     [EXCP_MSADIS] = "MSA disabled",
     [EXCP_MSAFPE] = "MSA floating point",
 };
-#endif
+
+static const char *mips_exception_name(int32_t exception)
+{
+    if (exception < 0 || exception > EXCP_LAST) {
+        return "unknown";
+    }
+    return excp_names[exception];
+}
 
 target_ulong exception_resume_pc(CPUMIPSState *env)
 {
@@ -1223,28 +1231,24 @@ void mips_cpu_do_interrupt(CPUState *cs)
     bool update_badinstr = 0;
     target_ulong offset;
     int cause = -1;
-    const char *name = "";
 
-    /* Log interrupt extra debug info */
-    if (qemu_log_instr_or_mask_enabled(env, CPU_LOG_INT) &&
-        cs->exception_index != EXCP_EXT_INTERRUPT) {
-        if (cs->exception_index < 0 || cs->exception_index > EXCP_LAST) {
-            name = "unknown";
-        } else {
-            name = excp_names[cs->exception_index];
-        }
-        qemu_log_instr_or_mask_msg(env, CPU_LOG_INT,
+    if (qemu_loglevel_mask(CPU_LOG_INT)
+        && cs->exception_index != EXCP_EXT_INTERRUPT) {
+        qemu_log_instr_or_mask_msg(
+            env, CPU_LOG_INT,
             "%s enter: PC " TARGET_FMT_lx " EPC " TARGET_FMT_lx
             " %s exception, (hflags & MIPS_HFLAG_BMASK)=%x, hflags=%x\n",
-            __func__, PC_ADDR(env), get_CP0_EPC(env), name,
+            __func__, PC_ADDR(env), get_CP0_EPC(env),
+            mips_exception_name(cs->exception_index),
             env->hflags & MIPS_HFLAG_BMASK, env->hflags);
 #ifdef TARGET_CHERI
         qemu_log_instr_or_mask_msg(env, CPU_LOG_INT,
-            "\tPCC=" PRINT_CAP_FMTSTR "\n\tKCC= " PRINT_CAP_FMTSTR
-            "\n\tEPCC=" PRINT_CAP_FMTSTR "\n",
-            PRINT_CAP_ARGS(cheri_get_current_pcc(env)),
-            PRINT_CAP_ARGS(&env->active_tc.CHWR.KCC),
-            PRINT_CAP_ARGS(&env->active_tc.CHWR.EPCC));
+                                   "\tPCC=" PRINT_CAP_FMTSTR
+                                   "\n\tKCC= " PRINT_CAP_FMTSTR
+                                   "\n\tEPCC=" PRINT_CAP_FMTSTR "\n",
+                                   PRINT_CAP_ARGS(cheri_get_current_pcc(env)),
+                                   PRINT_CAP_ARGS(&env->active_tc.CHWR.KCC),
+                                   PRINT_CAP_ARGS(&env->active_tc.CHWR.EPCC));
 #endif
     }
 
@@ -1738,44 +1742,12 @@ void QEMU_NORETURN do_raise_exception_err(CPUMIPSState *env, MipsExcp exception,
     }
 #endif
     if (qemu_log_instr_or_mask_enabled(env, CPU_LOG_INT)) {
-        qemu_log_instr_or_mask_msg(env, CPU_LOG_INT,
-            "%s: %s %d\n", __func__, exception <= EXCP_LAST ?
-            excp_names[exception] : "unknown excp", error_code);
+        qemu_log_instr_or_mask_msg(env, CPU_LOG_INT, "%s: %d (%s) %d\n",
+                                   __func__, exception,
+                                   mips_exception_name(exception), error_code);
     }
     cs->exception_index = exception;
     env->error_code = error_code;
 
     cpu_loop_exit_restore(cs, pc);
-}
-
-static void mips_cpu_add_definition(gpointer data, gpointer user_data)
-{
-    ObjectClass *oc = data;
-    CpuDefinitionInfoList **cpu_list = user_data;
-    CpuDefinitionInfoList *entry;
-    CpuDefinitionInfo *info;
-    const char *typename;
-
-    typename = object_class_get_name(oc);
-    info = g_malloc0(sizeof(*info));
-    info->name = g_strndup(typename,
-                           strlen(typename) - strlen("-" TYPE_MIPS_CPU));
-    info->q_typename = g_strdup(typename);
-
-    entry = g_malloc0(sizeof(*entry));
-    entry->value = info;
-    entry->next = *cpu_list;
-    *cpu_list = entry;
-}
-
-CpuDefinitionInfoList *qmp_query_cpu_definitions(Error **errp)
-{
-    CpuDefinitionInfoList *cpu_list = NULL;
-    GSList *list;
-
-    list = object_class_get_list(TYPE_MIPS_CPU, false);
-    g_slist_foreach(list, mips_cpu_add_definition, &cpu_list);
-    g_slist_free(list);
-
-    return cpu_list;
 }
