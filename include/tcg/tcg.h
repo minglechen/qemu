@@ -739,6 +739,7 @@ static inline bool in_code_gen_buffer(const void *p)
     return (size_t)(p - s->code_gen_buffer) <= s->code_gen_buffer_size;
 }
 
+
 #ifdef CONFIG_DEBUG_TCG
 const void *tcg_splitwx_to_rx(void *rw);
 void *tcg_splitwx_to_rw(const void *rx);

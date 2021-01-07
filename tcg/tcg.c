@@ -161,14 +161,14 @@ static int tcg_out_ldst_finalize(TCGContext *s);
 static TCGContext **tcg_ctxs;
 static unsigned int n_tcg_ctxs;
 TCGv_env cpu_env = 0;
-const void *tcg_code_gen_epilogue;
-uintptr_t tcg_splitwx_diff;
 #ifdef CONFIG_DEBUG_TCG
 TCGv _pc_is_current = 0;
 #endif
 #ifdef TARGET_CHERI
 TCGv ddc_interposition;
 #endif
+const void *tcg_code_gen_epilogue;
+uintptr_t tcg_splitwx_diff;
 
 #ifndef CONFIG_TCG_INTERPRETER
 tcg_prologue_fn *tcg_qemu_tb_exec;
@@ -1484,6 +1484,9 @@ bool tcg_op_supported(TCGOpcode op)
     case INDEX_op_qemu_st_i64:
         return true;
 
+    case INDEX_op_qemu_st8_i32:
+        return TCG_TARGET_HAS_qemu_st8_i32;
+
     case INDEX_op_goto_ptr:
         return TCG_TARGET_HAS_goto_ptr;
 
@@ -2144,6 +2147,7 @@ static void tcg_dump_ops(TCGContext *s, bool have_prefs)
                 break;
             case INDEX_op_qemu_ld_i32:
             case INDEX_op_qemu_st_i32:
+            case INDEX_op_qemu_st8_i32:
             case INDEX_op_qemu_ld_i64:
             case INDEX_op_qemu_st_i64:
                 {
