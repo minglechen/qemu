@@ -22,10 +22,10 @@ elif host_machine.system() == 'linux'
   have_virtfs_proxy_helper_deps = libattr.found() and libcap_ng.found()
   virtfs_proxy_helper_extra_sources = files('../hw/9pfs/9p-util-linux.c')
 else
-  warning('virtfs_proxy_helper not support on ' + host_machine.system())
+  warning('virtfs_proxy_helper not supported on ' + host_machine.system())
 endif
 
-have_virtfs_proxy_helper = have_tools and have_virtfs_proxy_helper_deps and 'CONFIG_VIRTFS' in config_host
+have_virtfs_proxy_helper = have_tools and have_virtfs_proxy_helper_deps and have_virtfs
 if have_virtfs_proxy_helper
   virtfs_prox_helper_sources = files('virtfs-proxy-helper.c', '9p-marshal.c', '9p-iov-marshal.c')
   executable('virtfs-proxy-helper',
