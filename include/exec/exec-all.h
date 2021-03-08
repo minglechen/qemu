@@ -452,9 +452,6 @@ struct TranslationBlock {
                              will allow us to avoid continuously changing the
                              bits that we use when merging from upstream. */
     uint32_t flags; /* flags defining in which context the code was generated */
-    uint16_t size;      /* size of target code for this block (1 <=
-                           size <= TARGET_PAGE_SIZE) */
-    uint16_t icount;
     uint32_t cflags;    /* compile flags */
 #define CF_COUNT_MASK  0x00007fff
 #define CF_LAST_IO     0x00008000 /* Last insn may be an IO access.  */
@@ -465,11 +462,17 @@ struct TranslationBlock {
 #define CF_LOG_INSTR   0x00100000 /* Generate calls to instruction tracing */
 #define CF_CLUSTER_MASK 0xff000000 /* Top 8 bits are cluster ID */
 #define CF_CLUSTER_SHIFT 24
-/* cflags' mask for hashing/comparison, basically ignore CF_INVALID */
-#define CF_HASH_MASK   (~CF_INVALID)
 
     /* Per-vCPU dynamic tracing state used to generate this TB */
     uint32_t trace_vcpu_dstate;
+
+    /*
+     * Above fields used for comparing
+     */
+
+    /* size of target code for this block (1 <= size <= TARGET_PAGE_SIZE) */
+    uint16_t size;
+    uint16_t icount;
 
     struct tb_tc tc;
 
@@ -515,9 +518,7 @@ struct TranslationBlock {
     uintptr_t jmp_dest[2];
 };
 
-extern bool parallel_cpus;
-
-// Reduce diff to upstream for CHERI (since we addd cs_top/ds_base/ds_top)
+/* Reduce diff to upstream for CHERI (since we add cs_top/cheri_flags). */
 #if !defined(cpu_get_tb_cpu_state_6)
 static inline void cpu_get_tb_cpu_state_6(CPUArchState *env, target_ulong *pc,
                                           target_ulong *cs_base,
@@ -530,7 +531,6 @@ static inline void cpu_get_tb_cpu_state_6(CPUArchState *env, target_ulong *pc,
     cpu_get_tb_cpu_state(env, pc, cs_base, flags);
 }
 #endif
-
 /* Hide the qatomic_read to make code a little easier on the eyes */
 static inline uint32_t tb_cflags(const TranslationBlock *tb)
 {
@@ -540,8 +540,7 @@ static inline uint32_t tb_cflags(const TranslationBlock *tb)
 /* current cflags for hashing/comparison */
 static inline uint32_t curr_cflags(CPUState *cpu)
 {
-    uint32_t flags = (parallel_cpus ? CF_PARALLEL : 0) |
-                     (icount_enabled() ? CF_USE_ICOUNT : 0);
+    uint32_t flags = cpu->tcg_cflags;
 #ifdef CONFIG_TCG_LOG_INSTR
     if (cpu->log_state.loglevel_active && qemu_loglevel_mask(CPU_LOG_INSTR))
         flags |= CF_LOG_INSTR;
@@ -561,7 +560,7 @@ void tb_phys_invalidate(TranslationBlock *tb, tb_page_addr_t page_addr);
 TranslationBlock *tb_htable_lookup(CPUState *cpu, target_ulong pc,
                                    target_ulong cs_base, target_ulong cs_top,
                                    uint32_t cheri_flags, uint32_t flags,
-                                   uint32_t cf_mask);
+                                   uint32_t cflags);
 void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr);
 
 /* GETPC is the true target of the return instruction that we'll execute.  */

@@ -27,11 +27,11 @@
 #include "exec/helper-proto.h"
 #include "exec/cpu_ldst.h"
 #include "exec/exec-all.h"
-#include "exec/tb-lookup.h"
 #include "disas/disas.h"
 #include "exec/log.h"
 #include "exec/log_instr.h"
 #include "tcg/tcg.h"
+#include "exec/tb-lookup.h"
 #ifdef TARGET_CHERI
 #include "cheri-helper-utils.h"
 #endif
@@ -157,8 +157,9 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
     uint32_t cheri_flags = 0;
     uint32_t flags;
 
-    tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &cs_top, &cheri_flags, &flags,
-                              curr_cflags(cpu));
+    cpu_get_tb_cpu_state_6(env, &pc, &cs_base, &cs_top, &cheri_flags, &flags);
+
+    tb = tb_lookup(cpu, pc, cs_base, cs_top, cheri_flags, flags, curr_cflags(cpu));
     if (tb == NULL) {
         return tcg_code_gen_epilogue;
     }
