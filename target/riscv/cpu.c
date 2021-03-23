@@ -713,6 +713,7 @@ static void riscv_cpu_reset(DeviceState *dev)
     env->mstatus = set_field(env->mstatus, MSTATUS64_SXL, mxl);
     env->mstatus = set_field(env->mstatus, MSTATUS64_UXL, mxl);
 #endif
+    env->two_stage_lookup = false;
 #endif
 
     cs->exception_index = EXCP_NONE;
