@@ -56,6 +56,48 @@ def maybeArchiveArtifacts(params, String os) {
     }
 }
 
+def bootCheriBSDForAllArchitectures(params, String config) {
+    stage("Boot CheriBSD (${config})") {
+        bootJobs = [failFast: false]
+        // TODO: should we also boot other images?
+        ["riscv64-purecap", "morello-purecap", "mips64-purecap"].each { String architecture ->
+            // TODO: boot both purecap and hybrid rather than just the default kernel
+            bootJobs["${architecture} on ${config}"] =
+                    { -> bootCheriBSD(params, "${config}-${architecture}", architecture, []) }
+        }
+        parallel bootJobs
+    }
+}
+
+def bootCheriBSD(params, String stageSuffix, String archSuffix, extraCheribuildArgs) {
+    def compressedKernel = "artifacts-${archSuffix}/kernel.xz"
+    def compressedDiskImage = "artifacts-${archSuffix}/cheribsd-${archSuffix}.img.xz"
+    sh "rm -rfv artifacts-${archSuffix}/cheribsd-*.img* artifacts-${archSuffix}/kernel*"
+    copyArtifacts projectName: "CheriBSD-pipeline/master", filter: "${compressedDiskImage}, ${compressedKernel}",
+                  target: '.', fingerprintArtifacts: false, flatten: false, selector: lastSuccessful()
+    def testExtraArgs = [
+            '--no-timestamped-test-subdir',
+            '--no-keep-compressed-images',
+            // Run a small subset of kyua tests to match the CheriBSD CI
+            '--kyua-tests-files=/usr/tests/bin/cat/Kyuafile',
+            "--test-output-dir=\$WORKSPACE/test-results/${stageSuffix}",
+            "--disk-image=${compressedDiskImage}",
+            "--kernel=${compressedKernel}",
+    ]
+    sh label: 'generate SSH key',
+       script: 'test -e $WORKSPACE/id_ed25519 || ssh-keygen -t ed25519 -N \'\' -f $WORKSPACE/id_ed25519 < /dev/null'
+    sh label: "Boot CheriBSD (${stageSuffix})", script: """
+rm -rf test-results/${stageSuffix} && mkdir -p test-results/${stageSuffix}
+./cheribuild/jenkins-cheri-build.py --test run-${archSuffix} '--test-extra-args=${testExtraArgs.join(" ")}' \
+    --test-ssh-key \$WORKSPACE/id_ed25519.pub ${extraCheribuildArgs.join(" ")} || echo Boot test failed
+"""
+    def summary = junit allowEmptyResults: false, keepLongStdio: true,
+                        testResults: "test-results/${stageSuffix}/test-results.xml"
+    if (summary.passCount == 0 || summary.totalCount == 0) {
+        params.statusFailure("No tests successful?")
+    }
+}
+
 // Work around for https://issues.jenkins.io/browse/JENKINS-46941
 // Jenkins appears to use the last selected manual override for automatically triggered builds.
 // Therefore, only read the parameter value for manually-triggered builds.
@@ -83,6 +125,7 @@ selectedConfigs.each { config ->
                     skipTarball: true,
                     afterBuild: { params ->
                         extraBuildSteps(params, os)
+                        bootCheriBSDForAllArchitectures(params, config)
                         // Don't archive the Debug+ASAN artifacts
                         if (!isDebug) {
                             maybeArchiveArtifacts(params, os)
