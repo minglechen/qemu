@@ -2508,20 +2508,13 @@ void gen_load_gpr(TCGv t, int reg)
     }
 }
 
-static inline void _gen_store_gpr(DisasContext *ctx, TCGv t, int reg)
+void _gen_store_gpr(DisasContext *ctx, TCGv t, int reg)
 {
     if (reg != 0) {
         tcg_gen_mov_tl(cpu_gpr[reg], t);
         gen_log_instr_gpr_update(ctx, reg);
     }
 }
-
-/*
- * Hack to forward extra arguments to _gen_store_gpr without changing
- * existing calls. This assumes that the DisasContext ctx argument is
- * present at call sites.
- */
-#define gen_store_gpr(t, reg) _gen_store_gpr(ctx, t, reg)
 
 /* Moves to/from shadow registers. */
 static inline void gen_load_srsgpr(DisasContext *ctx, int from, int to)

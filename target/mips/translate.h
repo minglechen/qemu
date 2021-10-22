@@ -132,7 +132,13 @@ void gen_base_offset_addr(DisasContext *ctx, TCGv addr, int base, int offset);
 void gen_move_low32(TCGv ret, TCGv_i64 arg);
 void gen_move_high32(TCGv ret, TCGv_i64 arg);
 void gen_load_gpr(TCGv t, int reg);
-void gen_store_gpr(TCGv t, int reg);
+/*
+ * Hack to forward extra arguments to _gen_store_gpr without changing
+ * existing calls. This assumes that the DisasContext ctx argument is
+ * present at call sites.
+ */
+#define gen_store_gpr(t, reg) _gen_store_gpr(ctx, t, reg)
+void _gen_store_gpr(DisasContext *ctx, TCGv t, int reg);
 void gen_load_fpr32(DisasContext *ctx, TCGv_i32 t, int reg);
 void gen_load_fpr64(DisasContext *ctx, TCGv_i64 t, int reg);
 void gen_store_fpr32(DisasContext *ctx, TCGv_i32 t, int reg);
