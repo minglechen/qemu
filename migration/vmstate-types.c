@@ -342,7 +342,7 @@ static int get_cap_register(QEMUFile *f, void *pv, size_t size,
 }
 
 static int put_cap_register(QEMUFile *f, void *pv, size_t size,
-                            const VMStateField *field, QJSON *vmdesc)
+                            const VMStateField *field, JSONWriter *vmdesc)
 {
     if (field->size == sizeof(cc128_cap_t)) {
         cc128_cap_t *v = pv;
