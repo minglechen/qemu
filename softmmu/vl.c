@@ -3676,6 +3676,13 @@ void qemu_init(int argc, char **argv, char **envp)
         dump_vmstate_json_to_file(vmstate_dump_file);
         exit(0);
     }
+
+    qemu_init_displays();
+    if (!preconfig_requested) {
+        qmp_x_exit_preconfig(&error_fatal);
+    }
+    accel_setup_post(current_machine);
+    os_setup_post();
     if (cl_breakpoint) {
         CPUState *cs;
 
@@ -3710,12 +3717,5 @@ void qemu_init(int argc, char **argv, char **envp)
             cpu_single_step(cpu, SSTEP_ENABLE | SSTEP_NOIRQ | SSTEP_NOTIMER);
         }
     }
-
-    qemu_init_displays();
-    if (!preconfig_requested) {
-        qmp_x_exit_preconfig(&error_fatal);
-    }
-    accel_setup_post(current_machine);
-    os_setup_post();
     resume_mux_open();
 }
