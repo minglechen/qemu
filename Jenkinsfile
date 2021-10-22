@@ -125,9 +125,10 @@ selectedConfigs.each { config ->
                     skipTarball: true,
                     afterBuild: { params ->
                         extraBuildSteps(params, os)
-                        bootCheriBSDForAllArchitectures(params, config)
-                        // Don't archive the Debug+ASAN artifacts
+                        // For Debug+ASAN we don't archive artifacts.
+                        // We also skip the boot test (for now) since the test script times out.
                         if (!isDebug) {
+                            bootCheriBSDForAllArchitectures(params, config)
                             maybeArchiveArtifacts(params, os)
                         }
                     })
